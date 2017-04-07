@@ -3,11 +3,14 @@
 # @Date    : 2017-03-02 11:11:36
 # @Author  : weiping 
 # @Link    : https://github.com/Weiping1992
+# @Version : 0.3
 
 import memcache
 import sys,os
 import json
 import commands
+import datetime
+import time
 
 dicMemcache={}
 
@@ -19,18 +22,37 @@ def GenerateMemcacheBackupFile(MemcacheClient):
 	exist=checkProcess()
 	#print exist
 	if (int(exist) > 0):
-		print "restore is running!exiting!"
+		print "restore is running! exiting! "
 		exit(0)
 	else:
 		if os.path.exists(tmpfilepath):
 			os.rename(tmpfilepath,filepath)
+		Time_dump_begin=datetime.datetime.now()
 		keyfile=commands.getoutput('memdump --servers='+memcache_ip+':'+port)
 		#print keyfile
+		Time_backup_begin=datetime.datetime.now()    #record the begin time of operation backup 
+		print str(Time_backup_begin)+" backup begins"
+		key_success=0                                #record the numbers of keys which succeed to backup
 		for key in keyfile.split(os.linesep):
-			value=MemcacheClient.get(key)
-			#print key,value
-			dicMemcache[key]=value
+			for try_time in range(0,11):         #try extra 10 times when get value is None (when mechine is on heavy load)
+				### try-except used to solve the problem that get value is None
+				try:
+		        		value=MemcacheClient.get(key)
+				except:
+					print "ERROR: KEY "+key+" value is None! "
+					print "try times: "+str(try_time)
+					time.sleep(2)
+				else:
+					#print key,value
+					dicMemcache[key]=value
+					key_success=key_success+1
+					break
 		#print dicMemcache
+		Time_backup_end=datetime.datetime.now()
+		print str(Time_backup_end)+" backup ends. "
+		print "success num: "+str(key_success)
+		print "memdump takes "+str((Time_backup_begin-Time_dump_begin).seconds)+" seconds"
+		print "backup takes "+str((Time_backup_end-Time_backup_begin).seconds)+" seconds"
 		f=open(tmpfilepath,'w')
 		f.write(json.dumps(dicMemcache))
 		f.close()
@@ -41,10 +63,13 @@ def RestoreMemcacheKeysValue(MemcacheClient):
 		f=open(filepath,'r')
 		dicWaitWrite=json.load(f)
 		#print dicWaitWrite
+		Time_restore_begin=datetime.datetime.now()
 		for key in dicWaitWrite.keys():
 			result=MemcacheClient.add(key,dicWaitWrite[key])
 			print "add KEY:"+str(key)+"  VALUE:"+str(dicWaitWrite[key])+"  "+str(result)
 		f.close()
+		Time_restore_end=datetime.datetime.now()
+		print "restore takes "+str((Time_restore_end-Time_restore_begin).seconds)+" seconds"
 	else:
 		print "ERROR: Don't have backup files!"
 
@@ -84,7 +109,19 @@ if __name__ == '__main__':
 	#print memcache_ip
 	port=os.popen("ps aux|grep \"/usr/local/bin/memcache\"|grep -v \"grep\"|awk '{print $24}'").readline().strip(os.linesep)
 	#print port
-	mc=memcache.Client([memcache_ip+':'+port],debug=0)
+
+	conStat=False					#connect stat
+	for conTime in range(0,10):
+		try:
+			mc=memcache.Client([memcache_ip+':'+port],debug=0)
+			conStat=True
+			break
+		except:
+			time.sleep(2)
+			print "Cannot connect memcache "+"try times:  "+ str(conTime)
+	if conStat == False:
+		print "connect to memcache failed! "
+		sys.exit(1)
 
 	#option
 	option_available=['backup','restore','addValue','delete']
