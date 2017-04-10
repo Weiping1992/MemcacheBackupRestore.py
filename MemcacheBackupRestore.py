@@ -3,7 +3,7 @@
 # @Date    : 2017-03-02 11:11:36
 # @Author  : weiping 
 # @Link    : https://github.com/Weiping1992
-# @Version : 0.3
+# @Version : 0.4
 
 import memcache
 import sys,os
@@ -13,6 +13,29 @@ import datetime
 import time
 
 dicMemcache={}
+
+def ConnectMemcache():
+	#connect to memcache server
+	global memcache_ip
+	memcache_ip=os.popen("ps aux|grep \"/usr/local/bin/memcache\"|grep -v \"grep\"|awk '{print $22}'").readline().strip(os.linesep)
+	#print memcache_ip
+	global port
+	port=os.popen("ps aux|grep \"/usr/local/bin/memcache\"|grep -v \"grep\"|awk '{print $24}'").readline().strip(os.linesep)
+	#print port
+
+	conStat=False					#connect stat
+	for conTime in range(0,10):
+		try:
+			MemcacheClient=memcache.Client([memcache_ip+':'+port],debug=0)
+			conStat=True
+			break
+		except:
+			time.sleepMemcacheClient)
+			print "Cannot connect memcache "+"try times:  "+ str(conTime)
+	if conStat == False:
+		print "connect to memcache failed! "
+		sys.exit(1)
+	return MemcacheClient
 
 def checkProcess():
 	ProcessExists=commands.getoutput("ps aux|grep \"MemcacheBackupRestore.py restore\"|grep -v grep|wc -l")
@@ -41,7 +64,12 @@ def GenerateMemcacheBackupFile(MemcacheClient):
 				except:
 					print "ERROR: KEY "+key+" value is None! "
 					print "try times: "+str(try_time)
+					MemcacheClient.disconnect_all()
 					time.sleep(2)
+					try:
+						MemcacheClient=ConnectMemcache()
+					except:
+						print "Error: cannot connect to Memcache! "
 				else:
 					#print key,value
 					dicMemcache[key]=value
@@ -104,24 +132,7 @@ if __name__ == '__main__':
 	filepath="/root/MemcacheDataBackup.json"
 	tmpfilepath="/root/MemcacheDataBackup_tmp.json"
 
-	#connect to memcache server
-	memcache_ip=os.popen("ps aux|grep \"/usr/local/bin/memcache\"|grep -v \"grep\"|awk '{print $22}'").readline().strip(os.linesep)
-	#print memcache_ip
-	port=os.popen("ps aux|grep \"/usr/local/bin/memcache\"|grep -v \"grep\"|awk '{print $24}'").readline().strip(os.linesep)
-	#print port
-
-	conStat=False					#connect stat
-	for conTime in range(0,10):
-		try:
-			mc=memcache.Client([memcache_ip+':'+port],debug=0)
-			conStat=True
-			break
-		except:
-			time.sleep(2)
-			print "Cannot connect memcache "+"try times:  "+ str(conTime)
-	if conStat == False:
-		print "connect to memcache failed! "
-		sys.exit(1)
+	mc=ConnectMemcache()
 
 	#option
 	option_available=['backup','restore','addValue','delete']
